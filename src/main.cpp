@@ -5,8 +5,8 @@
 #include <SDL_ttf.h>
 #include <string>
 
-const int SCREEN_WIDTH = 1280;
-const int SCREEN_HEIGHT = 720;
+int SCREEN_WIDTH = 1280;
+int SCREEN_HEIGHT = 720;
 
 // Layout
 SDL_Rect contentRect;
@@ -144,7 +144,7 @@ bool init()
         SDL_WINDOWPOS_CENTERED,
         SCREEN_WIDTH,
         SCREEN_HEIGHT,
-        SDL_WINDOW_SHOWN);
+        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
 
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     return renderer != nullptr;
@@ -302,7 +302,15 @@ int main(int argc, char *argv[])
             {
                 quit = true;
             }
+            //auto rescale
+            if (e.type == SDL_WINDOWEVENT &&
+                e.window.event == SDL_WINDOWEVENT_RESIZED)
+            {
+                SCREEN_WIDTH = e.window.data1;  // width mới
+                SCREEN_HEIGHT = e.window.data2; // height mới
 
+                initLayout(); //tính lại toàn bộ UI
+            }
             if (e.type == SDL_MOUSEBUTTONDOWN)
             {
                 int x = e.button.x;
