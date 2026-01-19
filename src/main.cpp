@@ -9,6 +9,9 @@ int SCREEN_WIDTH = 1280;
 int SCREEN_HEIGHT = 720;
 
 // Layout
+SDL_Rect playerArea;
+SDL_Rect playlistArea;
+
 SDL_Rect contentRect;
 SDL_Rect controlRect;
 
@@ -41,9 +44,18 @@ SDL_Rect durationTimeRect;
 int currentTimeSec = 83; // 01:23
 int durationSec = 296;   // 04:56
 
+// Playlist data
+std::vector<std::string> playlistPaths;
+std::vector<SDL_Texture *> playlistTextTex;
+std::vector<SDL_Rect> playlistTextRect;
+
 // Globals
 SDL_Window *window = nullptr;
 SDL_Renderer *renderer = nullptr;
+
+// Playlist highlight
+SDL_Texture *arrowTex = nullptr;
+SDL_Rect arrowRect;
 
 SDL_Texture *loadTexture(const char *path)
 {
@@ -61,28 +73,31 @@ SDL_Texture *loadTexture(const char *path)
 
 void initLayout()
 {
+    int playerW = SCREEN_WIDTH * 0.7f;
+    int playlistW = SCREEN_WIDTH - playerW;
+
+    playerArea = {0, 0, playerW, SCREEN_HEIGHT};
+    playlistArea = {playerW, 0, playlistW, SCREEN_HEIGHT};
     // -------- Content area (top 75%) --------
-    contentRect = {0, 0, SCREEN_WIDTH, int(SCREEN_HEIGHT * 0.75f)};
-
+    contentRect = {playerArea.x, playerArea.y, playerArea.w, int(playerArea.h * 0.75f)};
     // -------- Control area (bottom 25%) --------
-    controlRect = {0, contentRect.h, SCREEN_WIDTH, SCREEN_HEIGHT - contentRect.h};
-
+    controlRect = {playerArea.x, contentRect.y + contentRect.h, playerArea.w, playerArea.h - contentRect.h};
     // -------- Layout constants --------
-    int marginX = 100, timeW = 80, timeH = 24, gap = 12;
+    int marginX = 40, timeW = 80, timeH = 24, gap = 12;
     // Y center line for time + progress
     int barCenterY = controlRect.y + 45;
 
     // -------- Current time--------
-    currentTimeRect = {marginX, barCenterY - timeH / 2, timeW, timeH};
+    currentTimeRect = {playerArea.x + marginX, barCenterY - timeH / 2, timeW, timeH};
 
     // -------- Duration time--------
-    durationTimeRect = {SCREEN_WIDTH - marginX - timeW, barCenterY - timeH / 2, timeW, timeH};
+    durationTimeRect = {playerArea.x + playerArea.w - marginX - timeW, barCenterY - timeH / 2, timeW, timeH};
 
     // -------- Progress bar--------
     progressBg = {
-        currentTimeRect.x + currentTimeRect.w,
+        currentTimeRect.x + currentTimeRect.w + gap,
         barCenterY - 6,
-        durationTimeRect.x - (currentTimeRect.x + currentTimeRect.w + gap) - gap,
+        durationTimeRect.x - (currentTimeRect.x + currentTimeRect.w) - gap * 2,
         12};
 
     // Filled progress (demo 40%)
@@ -90,7 +105,7 @@ void initLayout()
     progressFill.w = progressBg.w * 0.4f;
 
     // -------- Control buttons (bottom area) --------
-    int btnSize = 64, spacing = 80, centerX = SCREEN_WIDTH / 2;
+    int btnSize = 64, spacing = 80, centerX = playerArea.x + playerArea.w / 2;
     int btnY = controlRect.y + 85;
 
     prevBtn = {centerX - btnSize - spacing, btnY, btnSize, btnSize};
@@ -152,6 +167,13 @@ bool init()
 
 bool loadMedia()
 {
+    playlistPaths = {
+        "../assets/music1.png",
+        "../assets/music2.png",
+        "../assets/music3.png",
+        "../assets/music4.png",
+        "../assets/music5.png"};
+
     mediaList.push_back(loadTexture("../assets/music1.png"));
     mediaList.push_back(loadTexture("../assets/music2.png"));
     mediaList.push_back(loadTexture("../assets/music3.png"));
@@ -170,63 +192,155 @@ bool loadMedia()
         if (!tex)
             return false;
 
+    arrowTex = loadTexture("../assets/arrow.png");
+    if (!arrowTex)
+        return false;
+
     return true;
+}
+
+void buildPlaylistUI()
+{
+    // Clear old playlist textures
+    for (auto tex : playlistTextTex)
+        SDL_DestroyTexture(tex);
+
+    playlistTextTex.clear();
+    playlistTextRect.clear();
+
+    SDL_Color textColor = {220, 220, 220, 255};
+
+    // ---- Layout config ----
+    int startY = playlistArea.y + 20; // padding top
+    int itemH = 36;                   // khoảng cách giữa các dòng
+    int paddingX = 36;                // padding left
+
+    for (size_t i = 0; i < playlistPaths.size(); ++i)
+    {
+        // Add index number before path
+        std::string text =
+            std::to_string(i + 1) + ". " + playlistPaths[i];
+
+        // Create text texture
+        SDL_Texture *tex = createTextTexture(text, textColor);
+        if (!tex)
+            continue;
+
+        int w, h;
+        SDL_QueryTexture(tex, nullptr, nullptr, &w, &h);
+        int maxTextWidth = playlistArea.w - paddingX - 12;
+
+        SDL_Rect r = {
+            playlistArea.x + paddingX,
+            startY + int(i) * itemH,
+            std::min(w, maxTextWidth),
+            h};
+
+        playlistTextTex.push_back(tex);
+        playlistTextRect.push_back(r);
+    }
 }
 
 void renderUI()
 {
+    // ===== Clear screen =====
     SDL_SetRenderDrawColor(renderer, 20, 20, 20, 255);
     SDL_RenderClear(renderer);
 
-    // Content
-    SDL_RenderCopy(renderer, mediaList[currentMediaIndex], NULL, &contentRect);
+    // ===== Left: Content area =====
+    SDL_RenderCopy(renderer, mediaList[currentMediaIndex], nullptr, &contentRect);
 
-    // Control bar background
+    // ===== Control bar =====
     SDL_SetRenderDrawColor(renderer, 40, 40, 40, 255);
     SDL_RenderFillRect(renderer, &controlRect);
 
-    // Progress bar
+    // ===== Progress bar =====
     SDL_SetRenderDrawColor(renderer, 90, 90, 90, 255);
     SDL_RenderFillRect(renderer, &progressBg);
 
     SDL_SetRenderDrawColor(renderer, 0, 200, 0, 255);
     SDL_RenderFillRect(renderer, &progressFill);
 
-    // Buttons
-    SDL_RenderCopy(renderer, prevTex, NULL, &prevBtn);
+    // ===== Buttons =====
+    SDL_RenderCopy(renderer, prevTex, nullptr, &prevBtn);
     SDL_Texture *currentPlayTex = isPlaying ? pauseTex : playTex;
-    SDL_RenderCopy(renderer, currentPlayTex, NULL, &playBtn);
-    SDL_RenderCopy(renderer, nextTex, NULL, &nextBtn);
+    SDL_RenderCopy(renderer, currentPlayTex, nullptr, &playBtn);
+    SDL_RenderCopy(renderer, nextTex, nullptr, &nextBtn);
 
-    // ---- Time text ----
+    // ===== Right: Playlist area =====
+    SDL_SetRenderDrawColor(renderer, 30, 30, 30, 255);
+    SDL_RenderFillRect(renderer, &playlistArea);
 
+    // Border chia 2 khu
+    SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
+    SDL_RenderDrawLine(renderer,
+                       playlistArea.x,
+                       0,
+                       playlistArea.x,
+                       SCREEN_HEIGHT);
+
+    // ===== Highlight current item =====
+    if (currentMediaIndex >= 0 &&
+        currentMediaIndex < (int)playlistTextRect.size())
+    {
+        SDL_Rect bg = playlistTextRect[currentMediaIndex];
+
+        bg.x = playlistArea.x + 6;
+        bg.w = playlistArea.w - 12;
+        bg.y -= 4;
+        bg.h += 8;
+
+        SDL_SetRenderDrawColor(renderer, 70, 70, 70, 255);
+        SDL_RenderFillRect(renderer, &bg);
+    }
+
+    // ===== Arrow indicator =====
+    if (arrowTex &&
+        currentMediaIndex >= 0 &&
+        currentMediaIndex < (int)playlistTextRect.size())
+    {
+        SDL_Rect textRect = playlistTextRect[currentMediaIndex];
+
+        SDL_Rect arrowRect = {
+            playlistArea.x + 8,
+            textRect.y + textRect.h / 2 - 8,
+            16,
+            16};
+
+        SDL_RenderCopy(renderer, arrowTex, nullptr, &arrowRect);
+    }
+
+    // ===== Playlist items =====
+    for (size_t i = 0; i < playlistTextTex.size(); ++i)
+    {
+        SDL_RenderCopy(renderer,
+                       playlistTextTex[i],
+                       nullptr,
+                       &playlistTextRect[i]);
+    }
+
+    // ===== Time text =====
     SDL_Color white = {220, 220, 220, 255};
 
-    // ---- current time ----
+    // Current time
     if (currentTimeTex)
         SDL_DestroyTexture(currentTimeTex);
 
-    currentTimeTex = createTextTexture(
-        formatTime(currentTimeSec), white);
-
-    SDL_QueryTexture(currentTimeTex, NULL, NULL,
+    currentTimeTex = createTextTexture(formatTime(currentTimeSec), white);
+    SDL_QueryTexture(currentTimeTex, nullptr, nullptr,
                      &currentTimeRect.w, &currentTimeRect.h);
+    SDL_RenderCopy(renderer, currentTimeTex, nullptr, &currentTimeRect);
 
-    SDL_RenderCopy(renderer, currentTimeTex, NULL, &currentTimeRect);
-
-    // ---- duration ----
+    // Duration
     if (durationTimeTex)
         SDL_DestroyTexture(durationTimeTex);
 
-    durationTimeTex = createTextTexture(
-        formatTime(durationSec), white);
-
-    SDL_QueryTexture(durationTimeTex, NULL, NULL,
+    durationTimeTex = createTextTexture(formatTime(durationSec), white);
+    SDL_QueryTexture(durationTimeTex, nullptr, nullptr,
                      &durationTimeRect.w, &durationTimeRect.h);
+    SDL_RenderCopy(renderer, durationTimeTex, nullptr, &durationTimeRect);
 
-    SDL_RenderCopy(renderer, durationTimeTex, NULL, &durationTimeRect);
-
-    // push frame
+    // ===== Present =====
     SDL_RenderPresent(renderer);
 }
 
@@ -265,6 +379,19 @@ void cleanup()
         font = nullptr;
     }
 
+    for (auto tex : playlistTextTex)
+        SDL_DestroyTexture(tex);
+
+    playlistTextTex.clear();
+    playlistTextRect.clear();
+    playlistPaths.clear();
+
+    if (arrowTex)
+    {
+        SDL_DestroyTexture(arrowTex);
+        arrowTex = nullptr;
+    }
+
     // Renderer & window
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
@@ -290,6 +417,7 @@ int main(int argc, char *argv[])
         return -1;
 
     initLayout();
+    buildPlaylistUI();
 
     bool quit = false;
     SDL_Event e;
@@ -302,14 +430,15 @@ int main(int argc, char *argv[])
             {
                 quit = true;
             }
-            //auto rescale
+            // auto rescale
             if (e.type == SDL_WINDOWEVENT &&
                 e.window.event == SDL_WINDOWEVENT_RESIZED)
             {
                 SCREEN_WIDTH = e.window.data1;  // width mới
                 SCREEN_HEIGHT = e.window.data2; // height mới
 
-                initLayout(); //tính lại toàn bộ UI
+                initLayout(); // tính lại toàn bộ UI
+                buildPlaylistUI();
             }
             if (e.type == SDL_MOUSEBUTTONDOWN)
             {
